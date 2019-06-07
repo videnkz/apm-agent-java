@@ -17,6 +17,7 @@
         <module>apm-web-plugin</module>
         <module>apm-api-plugin</module>
         <module>apm-apache-httpclient-plugin</module>
+        <module>apm-aws-apache-httpclient-plugin</module>
         <module>apm-spring-resttemplate-plugin</module>
         <module>apm-httpclient-core</module>
         <module>apm-slf4j-plugin</module>
@@ -27,6 +28,7 @@
         <module>apm-jaxws-plugin</module>
         <module>apm-scheduled-annotation-plugin</module>
         <module>apm-asynchttpclient-plugin</module>
+        <module>apm-aws-apache-httpclient-plugin</module>
     </modules>
 
     <properties>
