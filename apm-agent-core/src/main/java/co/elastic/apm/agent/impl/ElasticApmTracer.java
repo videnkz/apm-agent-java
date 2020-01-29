@@ -346,6 +346,30 @@ public class ElasticApmTracer {
         }
     }
 
+    @Nullable
+    public ErrorCapture captureException(@Nullable Throwable e, @Nullable TraceContextHolder<?> parent, @Nullable ClassLoader initiatingClassLoader) {
+        // note: if we add inheritance support for exception filtering, caching would be required for performance
+        if (e != null && !WildcardMatcher.isAnyMatch(coreConfiguration.getIgnoreExceptions(), e.getClass().getName())) {
+            ErrorCapture error = errorPool.createInstance();
+            error.withTimestamp(System.currentTimeMillis() * 1000);
+            error.setException(e);
+            Transaction currentTransaction = currentTransaction();
+            if (currentTransaction != null) {
+                error.setTransactionType(currentTransaction.getType());
+                error.setTransactionSampled(currentTransaction.isSampled());
+            }
+            if (parent != null) {
+                error.asChildOf(parent);
+            } else {
+                error.getTraceContext().getId().setToRandomValue();
+                error.getTraceContext().setServiceName(getServiceName(initiatingClassLoader));
+            }
+            return error;
+        }
+        return null;
+    }
+
+
     public ConfigurationRegistry getConfigurationRegistry() {
         return configurationRegistry;
     }
@@ -382,6 +406,10 @@ public class ElasticApmTracer {
         } else {
             span.decrementReferences();
         }
+    }
+
+    public void endError(ErrorCapture error) {
+        reporter.report(error);
     }
 
     public void recycle(Transaction transaction) {

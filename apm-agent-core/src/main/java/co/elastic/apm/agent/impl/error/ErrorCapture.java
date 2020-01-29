@@ -37,12 +37,13 @@ import co.elastic.apm.agent.objectpool.Recyclable;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.concurrent.Callable;
 
 
 /**
  * Data captured by an agent representing an event occurring in a monitored service
  */
-public class ErrorCapture implements Recyclable {
+public class ErrorCapture extends TraceContextHolder<ErrorCapture> implements Recyclable {
 
     private final TraceContext traceContext;
 
@@ -68,11 +69,10 @@ public class ErrorCapture implements Recyclable {
      */
     private TransactionInfo transactionInfo = new TransactionInfo();
 
-    private ElasticApmTracer tracer;
     private final StringBuilder culprit = new StringBuilder();
 
     public ErrorCapture(ElasticApmTracer tracer) {
-        this.tracer = tracer;
+        super(tracer);
         traceContext = TraceContext.with128BitId(this.tracer);
     }
 
@@ -144,6 +144,31 @@ public class ErrorCapture implements Recyclable {
 
     public TraceContext getTraceContext() {
         return traceContext;
+    }
+
+    @Override
+    public Span createSpan() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Span createSpan(long epochMicros) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isChildOf(TraceContextHolder other) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Runnable withActive(Runnable runnable) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public <V> Callable<V> withActive(Callable<V> callable) {
+        throw new UnsupportedOperationException();
     }
 
     public void setException(Throwable e) {
@@ -235,5 +260,9 @@ public class ErrorCapture implements Recyclable {
 
     public void setTransactionType(@Nullable String type) {
         transactionInfo.type = type;
+    }
+
+    public void end() {
+        tracer.endError(this);
     }
 }

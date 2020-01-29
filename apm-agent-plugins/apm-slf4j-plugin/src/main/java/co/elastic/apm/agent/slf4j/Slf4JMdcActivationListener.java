@@ -28,6 +28,7 @@ import co.elastic.apm.agent.cache.WeakKeySoftValueLoadingCache;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.ActivationListener;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
+import co.elastic.apm.agent.impl.error.ErrorCapture;
 import co.elastic.apm.agent.impl.transaction.TraceContext;
 import co.elastic.apm.agent.impl.transaction.TraceContextHolder;
 import co.elastic.apm.agent.logging.LoggingConfiguration;
@@ -46,6 +47,7 @@ public class Slf4JMdcActivationListener implements ActivationListener {
     private static final String ORG_SLF4J_MDC = "org." + "slf4j.MDC".toString();
     private static final String TRACE_ID = "trace.id";
     private static final String TRANSACTION_ID = "transaction.id";
+    private static final String ERROR_ID = "error.id";
     private static final Logger logger = LoggerFactory.getLogger(Slf4JMdcActivationListener.class);
 
     // Never invoked- only used for caching ClassLoaders that can't load the slf4j MDC class
@@ -99,6 +101,9 @@ public class Slf4JMdcActivationListener implements ActivationListener {
                 if (tracer.getActive() == null) {
                     put.invokeExact(TRACE_ID, traceContext.getTraceId().toString());
                     put.invokeExact(TRANSACTION_ID, traceContext.getTransactionId().toString());
+                }
+                if (tracer != null && context instanceof ErrorCapture) {
+                    put.invokeExact(ERROR_ID, traceContext.getId().toString());
                 }
             }
         }
