@@ -57,6 +57,9 @@ public class ServletApiTestApp extends TestApp {
         testHttpUrlConnection(test);
         testCaptureBody(test);
         testJmxMetrics(test);
+        testTransactionReportingWithForward(test);
+        testTransactionReportingWithInclude(test);
+        testTransactionReportingWithErrorHandling(test);
     }
 
     private void testCaptureBody(AbstractServletContainerIntegrationTest test) throws Exception {
@@ -73,6 +76,79 @@ public class ServletApiTestApp extends TestApp {
             final JsonNode transaction = test.assertTransactionReported("/simple-webapp/echo", 200);
             assertThat(transaction.get("context").get("request").get("body").textValue()).isEqualTo("{foo}\n{bar}");
         }
+    }
+
+    private void testTransactionReportingWithForward(AbstractServletContainerIntegrationTest test) throws Exception {
+        String pathToTest = "/simple-webapp" + "/forward";
+        boolean isExistForwardSpan = false;
+        boolean isExistDbH2QuerySpan = false;
+        test.clearMockServerLog();
+
+        test.executeAndValidateRequest(pathToTest, "Hello World", 200, null);
+
+        JsonNode transaction = test.assertTransactionReported(pathToTest, 200);
+
+        List<JsonNode> reportedSpans = test.getReportedSpans();
+        assertThat(reportedSpans.size()).isEqualTo(2);
+
+        for (JsonNode span : test.getReportedSpans()) {
+            String spanType = span.get("type").textValue();
+            if ("servlet.request-dispatcher.forward".equals(spanType)) {
+                isExistForwardSpan = true;
+                assertThat(span.get("name").textValue()).isEqualTo("FORWARD /servlet");
+            } else if ("db.h2.query".equals(spanType)) {
+                isExistDbH2QuerySpan = true;
+            }
+        }
+        assertThat(isExistForwardSpan).isEqualTo(true);
+        assertThat(isExistDbH2QuerySpan).isEqualTo(true);
+    }
+
+    private void testTransactionReportingWithInclude(AbstractServletContainerIntegrationTest test) throws Exception {
+        String pathToTest = "/simple-webapp" + "/include";
+        boolean isExistIncludeSpan = false;
+        boolean isExistDbH2QuerySpan = false;
+        test.clearMockServerLog();
+
+        test.executeAndValidateRequest(pathToTest, "Hello World", 200, null);
+
+        JsonNode transaction = test.assertTransactionReported(pathToTest, 200);
+        List<JsonNode> reportedSpans = test.getReportedSpans();
+        assertThat(reportedSpans.size()).isEqualTo(2);
+
+        for (JsonNode span : test.getReportedSpans()) {
+            String spanType = span.get("type").textValue();
+
+            if ("servlet.request-dispatcher.include".equals(spanType)) {
+                isExistIncludeSpan = true;
+                assertThat(span.get("name").textValue()).isEqualTo("INCLUDE /servlet");
+            } else if ("db.h2.query".equals(spanType)) {
+                isExistDbH2QuerySpan = true;
+            }
+        }
+        assertThat(isExistIncludeSpan).isEqualTo(true);
+        assertThat(isExistDbH2QuerySpan).isEqualTo(true);
+    }
+
+    private void testTransactionReportingWithErrorHandling(AbstractServletContainerIntegrationTest test) throws Exception {
+        String pathToTest = "/simple-webapp" + "/unknown";
+        boolean isExistErrorSpan = false;
+        test.clearMockServerLog();
+
+        test.executeAndValidateRequest(pathToTest, "Hello Error!", 404, null);
+
+        JsonNode transaction = test.assertTransactionReported(pathToTest, 404);
+//        List<JsonNode> reportedSpans = test.getReportedSpans();
+//        assertThat(reportedSpans.size()).isEqualTo(1);
+
+//        for (JsonNode span : test.getReportedSpans()) {
+//            String spanType = span.get("type").textValue();
+//            if ("servlet.request-dispatcher.error".equals(spanType)) {
+//                isExistErrorSpan = true;
+//                assertThat(span.get("name").textValue()).isEqualTo("ERROR /unknown");
+//            }
+//        }
+//        assertThat(isExistErrorSpan).isEqualTo(true);
     }
 
     private void testExecutorService(AbstractServletContainerIntegrationTest test) throws Exception {

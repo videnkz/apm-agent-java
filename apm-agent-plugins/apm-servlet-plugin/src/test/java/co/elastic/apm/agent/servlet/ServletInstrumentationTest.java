@@ -25,7 +25,10 @@
 package co.elastic.apm.agent.servlet;
 
 import co.elastic.apm.agent.impl.TracerInternalApiUtils;
+import co.elastic.apm.agent.impl.error.ErrorCapture;
+import co.elastic.apm.agent.impl.transaction.Span;
 import okhttp3.Response;
+import org.eclipse.jetty.servlet.ErrorPageErrorHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.junit.jupiter.api.Test;
 
@@ -42,6 +45,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.EnumSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +62,10 @@ class ServletInstrumentationTest extends AbstractServletTest {
         handler.addServlet(ForwardingServlet.class, "/forward");
         handler.addServlet(IncludingServlet.class, "/include");
         handler.addFilter(TestFilter.class, "/filter/*", EnumSet.of(DispatcherType.REQUEST));
+        handler.addServlet(ErrorServlet.class, "/error");
+        ErrorPageErrorHandler errorHandler = new ErrorPageErrorHandler();
+        errorHandler.addErrorPage(404, "/error");
+        handler.setErrorHandler(errorHandler);
     }
 
     @Test
@@ -82,19 +90,35 @@ class ServletInstrumentationTest extends AbstractServletTest {
     }
 
     @Test
-    void testForward() throws Exception {
+    void testForward_verifyThatSpanNameContainsOriginalServletPath() throws Exception {
         callServlet(1, "/forward");
+        assertThat(reporter.getSpans().size()).isEqualTo(1);
+        assertThat(reporter.getFirstSpan().getNameAsString()).isEqualTo("FORWARD /test");
     }
 
     @Test
-    void testInclude() throws Exception {
+    void testInclude_verifyThatSpanNameContainsTargetServletPath() throws Exception {
         callServlet(1, "/include");
+        assertThat(reporter.getSpans().size()).isEqualTo(1);
+        assertThat(reporter.getFirstSpan().getNameAsString()).isEqualTo("INCLUDE /test");
+    }
+
+    @Test
+    void testError() throws Exception {
+        callServlet(1, "/unkown", "Hello Error!", 404);
+        assertThat(reporter.getSpans().size()).isEqualTo(1);
+        Span span = reporter.getFirstSpan();
+        assertThat(span.getNameAsString()).isEqualTo("ERROR /unkown");
     }
 
     private void callServlet(int expectedTransactions, String path) throws IOException, InterruptedException {
+        callServlet(expectedTransactions, path, "Hello World!", 200);
+    }
+
+    private void callServlet(int expectedTransactions, String path, String expectedResponseBody, int expectedStatusCode) throws IOException, InterruptedException {
         final Response response = get(path);
-        assertThat(response.code()).isEqualTo(200);
-        assertThat(response.body().string()).isEqualTo("Hello World!");
+        assertThat(response.code()).isEqualTo(expectedStatusCode);
+        assertThat(response.body().string()).isEqualTo(expectedResponseBody);
 
         if (expectedTransactions > 0) {
             reporter.getFirstTransaction(500);
@@ -119,7 +143,7 @@ class ServletInstrumentationTest extends AbstractServletTest {
 
     public static class ForwardingServlet extends HttpServlet {
         @Override
-        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        public void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             req.getRequestDispatcher("/test").forward(req, resp);
         }
     }
@@ -128,6 +152,15 @@ class ServletInstrumentationTest extends AbstractServletTest {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             req.getRequestDispatcher("/test").include(req, resp);
+        }
+    }
+
+    public static class ErrorServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+            PrintWriter out = resp.getWriter();
+            out.print("Hello Error!");
+            out.close();
         }
     }
 

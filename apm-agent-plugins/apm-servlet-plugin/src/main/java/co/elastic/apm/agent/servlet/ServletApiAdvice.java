@@ -30,11 +30,14 @@ import co.elastic.apm.agent.impl.ElasticApmTracer;
 import co.elastic.apm.agent.impl.Scope;
 import co.elastic.apm.agent.impl.context.Request;
 import co.elastic.apm.agent.impl.context.Response;
+import co.elastic.apm.agent.impl.transaction.AbstractSpan;
+import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import net.bytebuddy.asm.Advice;
 
 import javax.annotation.Nullable;
 import javax.servlet.DispatcherType;
+import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -60,6 +63,15 @@ import static co.elastic.apm.agent.servlet.ServletTransactionHelper.determineSer
 public class ServletApiAdvice {
 
     private static final String FRAMEWORK_NAME = "Servlet API";
+    private static final String SPAN_TYPE = "servlet";
+    private static final String SPAN_SUBTYPE = "request-dispatcher";
+    private static final String FORWARD_SPAN_ACTION = "forward";
+    private static final String INCLUDE_SPAN_ACTION = "include";
+    private static final String ERROR_SPAN_ACTION = "error";
+    private static final String FORWARD = "FORWARD";
+    private static final String INCLUDE = "INCLUDE";
+    private static final String ERROR = "ERROR";
+    private static final String EMPTY = " ";
 
     @Nullable
     @VisibleForAdvice
@@ -87,8 +99,9 @@ public class ServletApiAdvice {
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static void onEnterServletService(@Advice.Argument(0) ServletRequest servletRequest,
-                                             @Advice.Local("transaction") Transaction transaction,
-                                             @Advice.Local("scope") Scope scope) {
+                                             @Advice.Local("transaction") @Nullable Transaction transaction,
+                                             @Advice.Local("scope") Scope scope,
+                                             @Advice.Local("span") @Nullable Span span) {
         if (tracer == null) {
             return;
         }
@@ -100,49 +113,72 @@ public class ServletApiAdvice {
         if (tracer.isRunning() &&
             servletTransactionHelper != null &&
             servletRequest instanceof HttpServletRequest &&
-            servletRequest.getDispatcherType() == DispatcherType.REQUEST &&
             !Boolean.TRUE.equals(excluded.get())) {
 
-            ServletContext servletContext = servletRequest.getServletContext();
-            if (servletContext != null) {
-                // this makes sure service name discovery also works when attaching at runtime
-                determineServiceName(servletContext.getServletContextName(), servletContext.getClassLoader(), servletContext.getContextPath());
-            }
-
-            final HttpServletRequest request = (HttpServletRequest) servletRequest;
-            if (ServletInstrumentation.servletTransactionCreationHelperManager != null) {
-                ServletInstrumentation.ServletTransactionCreationHelper<HttpServletRequest> helper =
-                    ServletInstrumentation.servletTransactionCreationHelperManager.getForClassLoaderOfClass(HttpServletRequest.class);
-                if (helper != null) {
-                    transaction = helper.createAndActivateTransaction(request);
+            if (servletRequest.getDispatcherType() == DispatcherType.REQUEST) {
+                ServletContext servletContext = servletRequest.getServletContext();
+                if (servletContext != null) {
+                    // this makes sure service name discovery also works when attaching at runtime
+                    determineServiceName(servletContext.getServletContextName(), servletContext.getClassLoader(), servletContext.getContextPath());
                 }
-            }
 
-            if (transaction == null) {
-                // if the request is excluded, avoid matching all exclude patterns again on each filter invocation
-                excluded.set(Boolean.TRUE);
-                return;
-            }
-            final Request req = transaction.getContext().getRequest();
-            if (transaction.isSampled() && tracer.getConfig(CoreConfiguration.class).isCaptureHeaders()) {
-                if (request.getCookies() != null) {
-                    for (Cookie cookie : request.getCookies()) {
-                        req.addCookie(cookie.getName(), cookie.getValue());
+                final HttpServletRequest request = (HttpServletRequest) servletRequest;
+                if (ServletInstrumentation.servletTransactionCreationHelperManager != null) {
+                    ServletInstrumentation.ServletTransactionCreationHelper<HttpServletRequest> helper =
+                        ServletInstrumentation.servletTransactionCreationHelperManager.getForClassLoaderOfClass(HttpServletRequest.class);
+                    if (helper != null) {
+                        transaction = helper.createAndActivateTransaction(request);
                     }
                 }
-                final Enumeration<String> headerNames = request.getHeaderNames();
-                if (headerNames != null) {
-                    while (headerNames.hasMoreElements()) {
-                        final String headerName = headerNames.nextElement();
-                        req.addHeader(headerName, request.getHeaders(headerName));
+
+                if (transaction == null) {
+                    // if the request is excluded, avoid matching all exclude patterns again on each filter invocation
+                    excluded.set(Boolean.TRUE);
+                    return;
+                }
+                final Request req = transaction.getContext().getRequest();
+                if (transaction.isSampled() && tracer.getConfig(CoreConfiguration.class).isCaptureHeaders()) {
+                    if (request.getCookies() != null) {
+                        for (Cookie cookie : request.getCookies()) {
+                            req.addCookie(cookie.getName(), cookie.getValue());
+                        }
+                    }
+                    final Enumeration<String> headerNames = request.getHeaderNames();
+                    if (headerNames != null) {
+                        while (headerNames.hasMoreElements()) {
+                            final String headerName = headerNames.nextElement();
+                            req.addHeader(headerName, request.getHeaders(headerName));
+                        }
+                    }
+                }
+                transaction.setFrameworkName(FRAMEWORK_NAME);
+
+                servletTransactionHelper.fillRequestContext(transaction, request.getProtocol(), request.getMethod(), request.isSecure(),
+                    request.getScheme(), request.getServerName(), request.getServerPort(), request.getRequestURI(), request.getQueryString(),
+                    request.getRemoteAddr(), request.getHeader("Content-Type"));
+            } else if (transaction == null) {
+                String servletPath = null;
+                final HttpServletRequest request = (HttpServletRequest) servletRequest;
+                final AbstractSpan<?> parent = tracer.getActive();
+                if (parent != null) {
+                    if (servletRequest.getDispatcherType() == DispatcherType.FORWARD) {
+                        servletPath = request.getServletPath();
+                        span = parent.createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(FORWARD_SPAN_ACTION).withName(FORWARD);
+                    } else if (servletRequest.getDispatcherType() == DispatcherType.INCLUDE) {
+                        servletPath = (String) request.getAttribute(RequestDispatcher.INCLUDE_SERVLET_PATH);
+                        span = tracer.getActive().createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(INCLUDE_SPAN_ACTION).withName(INCLUDE);
+                    } else if (servletRequest.getDispatcherType() == DispatcherType.ERROR) {
+                        span = tracer.getActive().createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(ERROR_SPAN_ACTION).withName(ERROR);
+                        servletPath = (String) request.getAttribute(RequestDispatcher.FORWARD_SERVLET_PATH);
+                    }
+                    if (span != null) {
+                        if (servletPath != null && !servletPath.isEmpty()) {
+                            span.appendToName(EMPTY).appendToName(servletPath);
+                        }
+                        span.activate();
                     }
                 }
             }
-            transaction.setFrameworkName(FRAMEWORK_NAME);
-
-            servletTransactionHelper.fillRequestContext(transaction, request.getProtocol(), request.getMethod(), request.isSecure(),
-                request.getScheme(), request.getServerName(), request.getServerPort(), request.getRequestURI(), request.getQueryString(),
-                request.getRemoteAddr(), request.getHeader("Content-Type"));
         }
     }
 
@@ -152,7 +188,8 @@ public class ServletApiAdvice {
                                             @Advice.Local("transaction") @Nullable Transaction transaction,
                                             @Advice.Local("scope") @Nullable Scope scope,
                                             @Advice.Thrown @Nullable Throwable t,
-                                            @Advice.This Object thiz) {
+                                            @Advice.This Object thiz,
+                                            @Advice.Local("span") @Nullable Span span) {
         if (tracer == null) {
             return;
         }
@@ -220,6 +257,11 @@ public class ServletApiAdvice {
                     request.getPathInfo(), contentTypeHeader, true
                 );
             }
+        }
+        if (span != null) {
+            span.captureException(t)
+                .deactivate()
+                .end();
         }
     }
 }
