@@ -108,6 +108,7 @@ public class ServletApiAdvice {
         // re-activate transactions for async requests
         final Transaction transactionAttr = (Transaction) servletRequest.getAttribute(TRANSACTION_ATTRIBUTE);
         if (tracer.currentTransaction() == null && transactionAttr != null) {
+            System.out.println("Activate in scope");
             scope = transactionAttr.activateInScope();
         }
         if (tracer.isRunning() &&
