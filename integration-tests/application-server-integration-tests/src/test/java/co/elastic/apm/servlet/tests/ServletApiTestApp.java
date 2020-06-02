@@ -136,7 +136,7 @@ public class ServletApiTestApp extends TestApp {
         test.clearMockServerLog();
 
         test.executeAndValidateRequest(pathToTest, "Hello Error!", 404, null);
-
+        // Failed on WebSphere webProfile7
         JsonNode transaction = test.assertTransactionReported(pathToTest, 404);
 //        List<JsonNode> reportedSpans = test.getReportedSpans();
 //        assertThat(reportedSpans.size()).isEqualTo(1);

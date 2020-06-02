@@ -89,6 +89,7 @@ public class ServletApiAdvice {
         }
     };
 
+
     @VisibleForAdvice
     public static final List<String> requestExceptionAttributes = Arrays.asList("javax.servlet.error.exception", "exception", "org.springframework.web.servlet.DispatcherServlet.EXCEPTION", "co.elastic.apm.exception");
 
@@ -114,70 +115,69 @@ public class ServletApiAdvice {
         if (tracer.isRunning() &&
             servletTransactionHelper != null &&
             servletRequest instanceof HttpServletRequest &&
-            !Boolean.TRUE.equals(excluded.get())) {
+            !Boolean.TRUE.equals(excluded.get()) && servletRequest.getDispatcherType() == DispatcherType.REQUEST) {
+            ServletContext servletContext = servletRequest.getServletContext();
+            if (servletContext != null) {
+                // this makes sure service name discovery also works when attaching at runtime
+                determineServiceName(servletContext.getServletContextName(), servletContext.getClassLoader(), servletContext.getContextPath());
+            }
 
-            if (servletRequest.getDispatcherType() == DispatcherType.REQUEST) {
-                ServletContext servletContext = servletRequest.getServletContext();
-                if (servletContext != null) {
-                    // this makes sure service name discovery also works when attaching at runtime
-                    determineServiceName(servletContext.getServletContextName(), servletContext.getClassLoader(), servletContext.getContextPath());
+            final HttpServletRequest request = (HttpServletRequest) servletRequest;
+            if (ServletInstrumentation.servletTransactionCreationHelperManager != null) {
+                ServletInstrumentation.ServletTransactionCreationHelper<HttpServletRequest> helper =
+                    ServletInstrumentation.servletTransactionCreationHelperManager.getForClassLoaderOfClass(HttpServletRequest.class);
+                if (helper != null) {
+                    transaction = helper.createAndActivateTransaction(request);
                 }
+            }
 
-                final HttpServletRequest request = (HttpServletRequest) servletRequest;
-                if (ServletInstrumentation.servletTransactionCreationHelperManager != null) {
-                    ServletInstrumentation.ServletTransactionCreationHelper<HttpServletRequest> helper =
-                        ServletInstrumentation.servletTransactionCreationHelperManager.getForClassLoaderOfClass(HttpServletRequest.class);
-                    if (helper != null) {
-                        transaction = helper.createAndActivateTransaction(request);
-                    }
-                }
-
-                if (transaction == null) {
-                    // if the request is excluded, avoid matching all exclude patterns again on each filter invocation
-                    excluded.set(Boolean.TRUE);
-                    return;
-                }
-                final Request req = transaction.getContext().getRequest();
-                if (transaction.isSampled() && tracer.getConfig(CoreConfiguration.class).isCaptureHeaders()) {
-                    if (request.getCookies() != null) {
-                        for (Cookie cookie : request.getCookies()) {
-                            req.addCookie(cookie.getName(), cookie.getValue());
-                        }
-                    }
-                    final Enumeration<String> headerNames = request.getHeaderNames();
-                    if (headerNames != null) {
-                        while (headerNames.hasMoreElements()) {
-                            final String headerName = headerNames.nextElement();
-                            req.addHeader(headerName, request.getHeaders(headerName));
-                        }
+            if (transaction == null) {
+                // if the request is excluded, avoid matching all exclude patterns again on each filter invocation
+                excluded.set(Boolean.TRUE);
+                return;
+            }
+            final Request req = transaction.getContext().getRequest();
+            if (transaction.isSampled() && tracer.getConfig(CoreConfiguration.class).isCaptureHeaders()) {
+                if (request.getCookies() != null) {
+                    for (Cookie cookie : request.getCookies()) {
+                        req.addCookie(cookie.getName(), cookie.getValue());
                     }
                 }
-                transaction.setFrameworkName(FRAMEWORK_NAME);
+                final Enumeration<String> headerNames = request.getHeaderNames();
+                if (headerNames != null) {
+                    while (headerNames.hasMoreElements()) {
+                        final String headerName = headerNames.nextElement();
+                        req.addHeader(headerName, request.getHeaders(headerName));
+                    }
+                }
+            }
 
-                servletTransactionHelper.fillRequestContext(transaction, request.getProtocol(), request.getMethod(), request.isSecure(),
-                    request.getScheme(), request.getServerName(), request.getServerPort(), request.getRequestURI(), request.getQueryString(),
-                    request.getRemoteAddr(), request.getHeader("Content-Type"));
-            } else if (transaction == null) {
-                String servletPath = null;
-                final HttpServletRequest request = (HttpServletRequest) servletRequest;
-                final AbstractSpan<?> parent = tracer.getActive();
-                if (parent != null) {
-                    if (servletRequest.getDispatcherType() == DispatcherType.FORWARD) {
-                        servletPath = request.getServletPath();
-                        span = parent.createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(FORWARD_SPAN_ACTION).withName(FORWARD);
-                    } else if (servletRequest.getDispatcherType() == DispatcherType.INCLUDE) {
-                        servletPath = (String) request.getAttribute(RequestDispatcher.INCLUDE_SERVLET_PATH);
-                        span = tracer.getActive().createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(INCLUDE_SPAN_ACTION).withName(INCLUDE);
-                    } else if (servletRequest.getDispatcherType() == DispatcherType.ERROR) {
-                        span = tracer.getActive().createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(ERROR_SPAN_ACTION).withName(ERROR);
-                        servletPath = (String) request.getAttribute(RequestDispatcher.FORWARD_SERVLET_PATH);
-                    }
-                    if (span != null) {
-                        if (servletPath != null && !servletPath.isEmpty()) {
-                            span.appendToName(EMPTY).appendToName(servletPath);
-                        }
-                        span.activate();
-                    }
+            servletTransactionHelper.fillRequestContext(transaction, request.getProtocol(), request.getMethod(), request.isSecure(),
+                request.getScheme(), request.getServerName(), request.getServerPort(), request.getRequestURI(), request.getQueryString(),
+                request.getRemoteAddr(), request.getHeader("Content-Type"));
+        } else if (transaction == null && servletRequest instanceof HttpServletRequest) {
+            String spanName = null;
+            final HttpServletRequest request = (HttpServletRequest) servletRequest;
+            final AbstractSpan<?> parent = tracer.getActive();
+            if (parent != null) {
+                DispatcherType dispatcherType = request.getDispatcherType();
+                boolean isAllowedType = false;
+                String spanAction = null;
+                if (dispatcherType == DispatcherType.FORWARD) {
+                    spanName = FORWARD + EMPTY + request.getServletPath();
+                    spanAction = FORWARD_SPAN_ACTION;
+                    isAllowedType = true;
+                } else if (dispatcherType == DispatcherType.INCLUDE) {
+                    spanName = INCLUDE + EMPTY + request.getAttribute(RequestDispatcher.INCLUDE_SERVLET_PATH);
+                    spanAction = INCLUDE_SPAN_ACTION;
+                    isAllowedType = true;
+                } else if (dispatcherType == DispatcherType.ERROR) {
+                    spanName = ERROR + EMPTY + request.getAttribute(RequestDispatcher.FORWARD_SERVLET_PATH);
+                    spanAction = ERROR_SPAN_ACTION;
+                    isAllowedType = true;
+                }
+                if (isAllowedType && !parent.getNameAsString().equals(spanName)) {
+                    span = parent.createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(spanAction).withName(spanName).activate();
                 }
             }
         }
