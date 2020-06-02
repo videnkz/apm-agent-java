@@ -143,7 +143,7 @@ class ServletInstrumentationTest extends AbstractServletTest {
 
     public static class ForwardingServlet extends HttpServlet {
         @Override
-        public void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             req.getRequestDispatcher("/test").forward(req, resp);
         }
     }

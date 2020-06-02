@@ -156,13 +156,12 @@ public class ServletApiAdvice {
                 request.getScheme(), request.getServerName(), request.getServerPort(), request.getRequestURI(), request.getQueryString(),
                 request.getRemoteAddr(), request.getHeader("Content-Type"));
         } else if (transaction == null && servletRequest instanceof HttpServletRequest) {
-            String spanName = null;
-            final HttpServletRequest request = (HttpServletRequest) servletRequest;
             final AbstractSpan<?> parent = tracer.getActive();
             if (parent != null) {
+                final HttpServletRequest request = (HttpServletRequest) servletRequest;
                 DispatcherType dispatcherType = request.getDispatcherType();
                 boolean isAllowedType = false;
-                String spanAction = null;
+                String spanAction = null, spanName = null;
                 if (dispatcherType == DispatcherType.FORWARD) {
                     spanName = FORWARD + EMPTY + request.getServletPath();
                     spanAction = FORWARD_SPAN_ACTION;
@@ -177,7 +176,12 @@ public class ServletApiAdvice {
                     isAllowedType = true;
                 }
                 if (isAllowedType && !parent.getNameAsString().equals(spanName)) {
-                    span = parent.createSpan().withType(SPAN_TYPE).withSubtype(SPAN_SUBTYPE).withAction(spanAction).withName(spanName).activate();
+                    span = parent.createSpan()
+                        .withType(SPAN_TYPE)
+                        .withSubtype(SPAN_SUBTYPE)
+                        .withAction(spanAction)
+                        .withName(spanName)
+                        .activate();
                 }
             }
         }

@@ -26,6 +26,7 @@ package co.elastic.apm.servlet.tests;
 
 import co.elastic.apm.servlet.AbstractServletContainerIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.github.tomakehurst.wiremock.common.Json;
 import okhttp3.MediaType;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -132,23 +133,9 @@ public class ServletApiTestApp extends TestApp {
 
     private void testTransactionReportingWithErrorHandling(AbstractServletContainerIntegrationTest test) throws Exception {
         String pathToTest = "/simple-webapp" + "/unknown";
-        boolean isExistErrorSpan = false;
         test.clearMockServerLog();
 
         test.executeAndValidateRequest(pathToTest, "Hello Error!", 404, null);
-        // Failed on WebSphere webProfile7
-        JsonNode transaction = test.assertTransactionReported(pathToTest, 404);
-//        List<JsonNode> reportedSpans = test.getReportedSpans();
-//        assertThat(reportedSpans.size()).isEqualTo(1);
-
-//        for (JsonNode span : test.getReportedSpans()) {
-//            String spanType = span.get("type").textValue();
-//            if ("servlet.request-dispatcher.error".equals(spanType)) {
-//                isExistErrorSpan = true;
-//                assertThat(span.get("name").textValue()).isEqualTo("ERROR /unknown");
-//            }
-//        }
-//        assertThat(isExistErrorSpan).isEqualTo(true);
     }
 
     private void testExecutorService(AbstractServletContainerIntegrationTest test) throws Exception {
