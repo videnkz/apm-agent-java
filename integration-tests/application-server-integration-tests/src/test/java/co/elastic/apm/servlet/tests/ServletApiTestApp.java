@@ -60,7 +60,6 @@ public class ServletApiTestApp extends TestApp {
         testJmxMetrics(test);
         testTransactionReportingWithForward(test);
         testTransactionReportingWithInclude(test);
-        testTransactionReportingWithErrorHandling(test);
     }
 
     private void testCaptureBody(AbstractServletContainerIntegrationTest test) throws Exception {
@@ -129,13 +128,6 @@ public class ServletApiTestApp extends TestApp {
         }
         assertThat(isExistIncludeSpan).isEqualTo(true);
         assertThat(isExistDbH2QuerySpan).isEqualTo(true);
-    }
-
-    private void testTransactionReportingWithErrorHandling(AbstractServletContainerIntegrationTest test) throws Exception {
-        String pathToTest = "/simple-webapp" + "/unknown";
-        test.clearMockServerLog();
-
-        test.executeAndValidateRequest(pathToTest, "Hello Error!", 404, null);
     }
 
     private void testExecutorService(AbstractServletContainerIntegrationTest test) throws Exception {
