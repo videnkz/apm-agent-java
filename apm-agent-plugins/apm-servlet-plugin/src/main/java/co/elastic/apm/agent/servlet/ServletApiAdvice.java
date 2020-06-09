@@ -71,7 +71,8 @@ public class ServletApiAdvice {
     private static final String FORWARD = "FORWARD";
     private static final String INCLUDE = "INCLUDE";
     private static final String ERROR = "ERROR";
-    private static final String EMPTY = " ";
+    private static final String SPACE = " ";
+    private static final String EMPTY = "";
 
     @Nullable
     @VisibleForAdvice
@@ -163,15 +164,17 @@ public class ServletApiAdvice {
                 boolean isAllowedType = false;
                 String spanAction = null, spanName = null;
                 if (dispatcherType == DispatcherType.FORWARD) {
-                    spanName = FORWARD + EMPTY + request.getServletPath();
+                    String pathInfo = request.getPathInfo();
+                    spanName = FORWARD + SPACE + request.getServletPath() + (pathInfo != null ? pathInfo : EMPTY);
                     spanAction = FORWARD_SPAN_ACTION;
                     isAllowedType = true;
                 } else if (dispatcherType == DispatcherType.INCLUDE) {
-                    spanName = INCLUDE + EMPTY + request.getAttribute(RequestDispatcher.INCLUDE_SERVLET_PATH);
+                    Object pathInfo = request.getAttribute(RequestDispatcher.INCLUDE_PATH_INFO);
+                    spanName = INCLUDE + SPACE + request.getAttribute(RequestDispatcher.INCLUDE_SERVLET_PATH) + (pathInfo != null ? pathInfo : EMPTY);
                     spanAction = INCLUDE_SPAN_ACTION;
                     isAllowedType = true;
                 } else if (dispatcherType == DispatcherType.ERROR) {
-                    spanName = ERROR + EMPTY + request.getAttribute(RequestDispatcher.FORWARD_SERVLET_PATH);
+                    spanName = ERROR + SPACE + request.getAttribute(RequestDispatcher.FORWARD_SERVLET_PATH);
                     spanAction = ERROR_SPAN_ACTION;
                     isAllowedType = true;
                 }
