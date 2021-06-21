@@ -30,6 +30,7 @@ import org.springframework.amqp.core.MessageListener;
 import org.springframework.amqp.rabbit.listener.api.ChannelAwareMessageListener;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 public class MessageListenerHelper {
 
@@ -73,6 +74,11 @@ public class MessageListenerHelper {
         @Override
         public void onMessage(Message message, Channel channel) throws Exception {
             delegate.onMessage(message, channel);
+        }
+
+        @Override
+        public void onMessage(Message message) {
+            ChannelAwareMessageListener.super.onMessage(message);
         }
     }
 }
