@@ -78,7 +78,7 @@ public class MessageListenerHelper {
 
         @Override
         public void onMessage(Message message) {
-            ChannelAwareMessageListener.super.onMessage(message);
+            delegate.onMessage(message);
         }
     }
 }
