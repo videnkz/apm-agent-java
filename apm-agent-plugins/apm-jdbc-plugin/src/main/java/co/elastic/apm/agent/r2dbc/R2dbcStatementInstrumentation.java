@@ -77,9 +77,9 @@ public abstract class R2dbcStatementInstrumentation extends R2dbcInstrumentation
      * </ul>
      */
     @SuppressWarnings("DuplicatedCode")
-    public static class ExecuteWithQueryInstrumentation extends R2dbcStatementInstrumentation {
+    public static class R2dbcExecuteInstrumentation extends R2dbcStatementInstrumentation {
 
-        public ExecuteWithQueryInstrumentation(ElasticApmTracer tracer) {
+        public R2dbcExecuteInstrumentation(ElasticApmTracer tracer) {
             super(
                 named("execute")
                     .and(takesNoArguments())

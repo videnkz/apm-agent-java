@@ -155,7 +155,7 @@ public class R2dbcHelper {
 //        }
         ConnectionMetaData apmConnectionMetadata = null;
         try {
-            ConnectionMetadata metaData = connection.getMetadata();
+//            ConnectionMetadata metaData = connection.getMetadata();
 //            metaData.getDatabaseProductName()
             apmConnectionMetadata = ConnectionMetaData.create("TODO URL", "TODO CATALOG", "TODO USER");
 //            if (supported == null) {
