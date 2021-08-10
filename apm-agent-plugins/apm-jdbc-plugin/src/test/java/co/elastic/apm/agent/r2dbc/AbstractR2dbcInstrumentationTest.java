@@ -10,6 +10,7 @@ import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.jdbc.helper.JdbcGlobalState;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.R2dbcException;
+import io.r2dbc.spi.R2dbcNonTransientException;
 import io.r2dbc.spi.Statement;
 import org.junit.After;
 import org.junit.Before;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nullable;
+import java.sql.SQLException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -89,6 +91,7 @@ public class AbstractR2dbcInstrumentationTest extends AbstractInstrumentationTes
     @Test
     public void test() {
         executeTest(this::testStatement);
+        executeTest(() -> testUpdateStatement());
     }
 
     private void executeTest(R2dbcTask task) throws R2dbcException {
@@ -138,6 +141,14 @@ public class AbstractR2dbcInstrumentationTest extends AbstractInstrumentationTes
         assertThat(span.getOutcome()).isEqualTo(Outcome.SUCCESS);
     }
 
+    private void testUpdateStatement() {
+        final String sql = "UPDATE ELASTIC_APM SET BAR='AFTER' WHERE FOO=11";
+        Statement statement = connection.createStatement(sql);
+        statement.execute();
+
+        assertSpanRecorded(sql, false, 0);
+    }
+
     private Span assertSpanRecorded(String rawSql, boolean preparedStatement, long expectedAffectedRows) throws R2dbcException {
         assertThat(reporter.getSpans())
             .describedAs("one span is expected")
@@ -152,22 +163,22 @@ public class AbstractR2dbcInstrumentationTest extends AbstractInstrumentationTes
 
         Db db = span.getContext().getDb();
         assertThat(db.getStatement()).isEqualTo(rawSql);
-//        DatabaseMetaData metaData = connection.getMetaData();
+//        ConnectionMetadata metaData = connection.getMetadata();
 //        assertThat(db.getInstance()).isEqualToIgnoringCase(connection.getCatalog());
 //        assertThat(db.getUser()).isEqualToIgnoringCase(metaData.getUserName());
-//        assertThat(db.getType()).isEqualToIgnoringCase("sql");
+        assertThat(db.getType()).isEqualToIgnoringCase("sql");
 
 //        assertThat(db.getAffectedRowsCount())
 //            .describedAs("unexpected affected rows count for statement %s", rawSql)
 //            .isEqualTo(expectedAffectedRows);
 
         Destination destination = span.getContext().getDestination();
-        assertThat(destination.getAddress().toString()).isEqualTo("localhost");
-        if (expectedDbVendor.equals("h2")) {
-            assertThat(destination.getPort()).isEqualTo(-1);
-        } else {
-            assertThat(destination.getPort()).isGreaterThan(0);
-        }
+//        assertThat(destination.getAddress().toString()).isEqualTo("localhost");
+//        if (expectedDbVendor.equals("h2")) {
+//            assertThat(destination.getPort()).isEqualTo(-1);
+//        } else {
+//            assertThat(destination.getPort()).isGreaterThan(0);
+//        }
 
         Destination.Service service = destination.getService();
         assertThat(service.getResource().toString()).isEqualTo(expectedDbVendor);
@@ -179,5 +190,28 @@ public class AbstractR2dbcInstrumentationTest extends AbstractInstrumentationTes
         return span;
     }
 
+    private interface StatementExecutor<T> {
+        T withStatement(Statement s, String sql) throws R2dbcException;
+    }
 
+    /**
+     * @param task jdbc task to execute
+     * @return false if feature is not supported, true otherwise
+     */
+    private static boolean executePotentiallyUnsupportedFeature(R2dbcTask task) throws SQLException {
+        try {
+            task.execute();
+        } catch (R2dbcNonTransientException | UnsupportedOperationException unsupported) {
+            // silently ignored as this feature is not supported by most JDBC drivers
+            return false;
+        } catch (R2dbcException e) {
+            if (e.getCause() instanceof UnsupportedOperationException) {
+                // same as above, because c3p0 have it's own way to say feature not supported
+                return false;
+            } else {
+                throw new SQLException(e);
+            }
+        }
+        return true;
+    }
 }
