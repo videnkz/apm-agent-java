@@ -22,6 +22,7 @@ package co.elastic.apm.agent.r2dbc;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.r2dbc.helper.R2dbcHelper;
+import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.Statement;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.NamedElement;
@@ -91,8 +92,10 @@ public abstract class R2dbcStatementInstrumentation extends R2dbcInstrumentation
         @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
         public static Object onBeforeExecute(@Advice.This Statement statement) {
             R2dbcHelper helper = R2dbcHelper.get();
-            @Nullable String sql = helper.retrieveSqlForStatement(statement);
-            return R2dbcHelper.get().createJdbcSpan(sql, statement, tracer.getActive(), false);
+            Object[] connectionSqlObj = helper.retrieveConnectionSqlForStatement(statement);
+            @Nullable String sql = connectionSqlObj != null ? (connectionSqlObj[1] instanceof String ? (String) connectionSqlObj[1] : null) : null;
+            @Nullable Connection connection = connectionSqlObj != null ? (connectionSqlObj[0] instanceof Connection ? (Connection) connectionSqlObj[0] : null) : null;
+            return R2dbcHelper.get().createJdbcSpan(connection, sql, statement, tracer.getActive(), false);
         }
 
 

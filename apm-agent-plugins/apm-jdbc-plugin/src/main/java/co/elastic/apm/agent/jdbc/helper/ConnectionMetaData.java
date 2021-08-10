@@ -111,6 +111,14 @@ public class ConnectionMetaData {
     private final String instance;
     private final String user;
 
+    public ConnectionMetaData(String dbVendor, String version) {
+        this.dbVendor = dbVendor;
+        this.host = null;
+        this.port = 0;
+        this.instance = null;
+        this.user = null;
+    }
+
     private ConnectionMetaData(String dbVendor, @Nullable String host, int port, @Nullable String instance, String user) {
         this.dbVendor = dbVendor;
         this.host = host;
@@ -119,6 +127,7 @@ public class ConnectionMetaData {
         this.user = user;
     }
 
+    @Nullable
     public String getDbVendor() {
         return dbVendor;
     }

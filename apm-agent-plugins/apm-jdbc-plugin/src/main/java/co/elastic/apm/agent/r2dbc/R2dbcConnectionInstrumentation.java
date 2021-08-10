@@ -47,10 +47,11 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 public class R2dbcConnectionInstrumentation extends R2dbcInstrumentation {
 
     @Advice.OnMethodExit(suppress = Throwable.class, inline = false)
-    public static void storeSql(@Advice.Return @Nullable Statement statement,
+    public static void storeSql(@Advice.This Object connectionObject,
+                                @Advice.Return @Nullable Statement statement,
                                 @Advice.Argument(0) String sql) {
         if (statement != null) { // might be null if exception is thrown
-            R2dbcHelper.get().mapStatementToSql(statement, sql);
+            R2dbcHelper.get().mapStatementToSql(statement, connectionObject, sql);
         }
     }
 

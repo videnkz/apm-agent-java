@@ -25,6 +25,7 @@ import co.elastic.apm.agent.impl.transaction.AbstractSpan;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.jdbc.JdbcFilter;
 import co.elastic.apm.agent.jdbc.helper.ConnectionMetaData;
+import com.blogspot.mydailyjava.weaklockfree.WeakConcurrentMap;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.R2dbcException;
@@ -35,7 +36,8 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.util.concurrent.Callable;
 
-import static co.elastic.apm.agent.r2dbc.helper.R2dbcGlobalState.statementSqlMap;
+import static co.elastic.apm.agent.r2dbc.helper.R2dbcGlobalState.r2dbcMetaDataMap;
+import static co.elastic.apm.agent.r2dbc.helper.R2dbcGlobalState.statementConnectionSqlMap;
 
 public class R2dbcHelper {
 
@@ -62,8 +64,8 @@ public class R2dbcHelper {
      * @param statement javax.sql.Statement object
      * @param sql       query string
      */
-    public void mapStatementToSql(Object statement, String sql) {
-        statementSqlMap.putIfAbsent(statement, sql);
+    public void mapStatementToSql(Object statement, Object connection, String sql) {
+        statementConnectionSqlMap.putIfAbsent(statement, new Object[]{connection, sql});
     }
 
     /**
@@ -75,13 +77,13 @@ public class R2dbcHelper {
      * @return the SQL statement belonging to provided Statement, or {@code null}
      */
     @Nullable
-    public String retrieveSqlForStatement(Object statement) {
-        return statementSqlMap.get(statement);
+    public Object[] retrieveConnectionSqlForStatement(Object statement) {
+        return statementConnectionSqlMap.get(statement);
     }
 
 
     @Nullable
-    public Span createJdbcSpan(@Nullable String sql, Object statement, @Nullable AbstractSpan<?> parent, boolean preparedStatement) {
+    public Span createJdbcSpan(@Nullable Connection connection, @Nullable String sql, Object statement, @Nullable AbstractSpan<?> parent, boolean preparedStatement) {
         if (!(statement instanceof Statement) || sql == null || isAlreadyMonitored(parent) || parent == null) {
             return null;
         }
@@ -106,8 +108,7 @@ public class R2dbcHelper {
             .withStatement(sql.isEmpty() ? "(empty query)" : sql)
             .withType("sql");
 
-//        Connection connection = safeGetConnection((Statement) statement);
-        ConnectionMetaData connectionMetaData = getConnectionMetaData(null);
+        ConnectionMetaData connectionMetaData = getConnectionMetaData(connection);
 
         String vendor = "unknown";
         if (connectionMetaData != null) {
@@ -144,88 +145,66 @@ public class R2dbcHelper {
 
     @Nullable
     private ConnectionMetaData getConnectionMetaData(@Nullable Connection connection) {
-//        if (null == connection) {
-//            return null;
-//        }
-
-//        Class<?> type = connection.getClass();
-//        Boolean supported = isSupported(JdbcFeature.METADATA, type);
-//        if (supported == Boolean.FALSE) {
-//            return null;
-//        }
-        ConnectionMetaData apmConnectionMetadata = null;
-        try {
-//            ConnectionMetadata metaData = connection.getMetadata();
-//            metaData.getDatabaseProductName()
-            apmConnectionMetadata = ConnectionMetaData.create("TODO URL", "TODO CATALOG", "TODO USER");
-//            if (supported == null) {
-//                markSupported(JdbcFeature.METADATA, type);
-//            }
-        } catch (R2dbcException e) {
-//            markNotSupported(JdbcFeature.METADATA, type, e);
+        if (null == connection) {
+            return null;
+        }
+        ConnectionMetaData connectionMetaData = r2dbcMetaDataMap.get(connection);
+        if (connectionMetaData != null) {
+            return connectionMetaData;
         }
 
-//        if (connectionMetaData != null) {
-//            metaDataMap.put(connection, connectionMetaData);
-//        }
+        Class<?> type = connection.getClass();
+        Boolean supported = isSupported(JdbcFeature.METADATA, type);
+        if (supported == Boolean.FALSE) {
+            return null;
+        }
+        ConnectionMetaData apmConnectionMetadata = null;
+        try {
+            ConnectionMetadata metaData = connection.getMetadata();
+            logger.debug("Defined vendor metadata productName = {}, version = {}", metaData.getDatabaseProductName(), metaData.getDatabaseVersion());
+            if (metaData != null && metaData.getDatabaseProductName() != null) {
+                apmConnectionMetadata = new ConnectionMetaData(metaData.getDatabaseProductName().toLowerCase(), metaData.getDatabaseVersion());
+                if (supported == null) {
+                    markSupported(JdbcFeature.METADATA, type);
+                }
+            }
+        } catch (R2dbcException e) {
+            markNotSupported(JdbcFeature.METADATA, type, e);
+        }
+        if (apmConnectionMetadata != null) {
+            R2dbcGlobalState.r2dbcMetaDataMap.put(connection, apmConnectionMetadata);
+        }
         return apmConnectionMetadata;
     }
 
-//    @Nullable
-//    private Connection safeGetConnection(Statement statement) {
-//        Connection connection = null;
-//        Class<?> type = statement.getClass();
-//        Boolean supported = isSupported(JdbcFeature.CONNECTION, type);
-//        if (supported == Boolean.FALSE) {
-//            return null;
-//        }
-//
-//        try {
-//            connection = statement.getConnection();
-//            if (supported == null) {
-//                markSupported(JdbcFeature.CONNECTION, type);
-//            }
-//        } catch (SQLException e) {
-//            markNotSupported(JdbcFeature.CONNECTION, type, e);
-//        }
-//
-//        return connection;
-//    }
+    @Nullable
+    private static Boolean isSupported(JdbcFeature feature, Class<?> type) {
+        return feature.classSupport.get(type);
+    }
 
-//    @Nullable
-//    private static Boolean isSupported(JdbcFeature feature, Class<?> type) {
-//        return feature.classSupport.get(type);
-//    }
-//
-//    private static void markSupported(JdbcFeature feature, Class<?> type) {
-//        feature.classSupport.put(type, Boolean.TRUE);
-//    }
-//
-//    private static void markNotSupported(JdbcFeature feature, Class<?> type, R2dbcException e) {
-//        Boolean previous = feature.classSupport.put(type, Boolean.FALSE);
-//        if (previous == null) {
-//            logger.warn("JDBC feature not supported on class " + type, e);
-//        }
-//    }
+    private static void markSupported(JdbcFeature feature, Class<?> type) {
+        feature.classSupport.put(type, Boolean.TRUE);
+    }
 
-//    /**
-//     * Represent JDBC features for which availability has to be checked at runtime
-//     */
-//    private enum JdbcFeature {
-//        /**
-//         * {@link Connection#getMetaData()}
-//         */
-//        METADATA(JdbcGlobalState.metadataSupported),
-//        /**
-//         * {@link Statement#getConnection()}
-//         */
-//        CONNECTION(JdbcGlobalState.connectionSupported);
-//
-//        private final WeakConcurrentMap<Class<?>, Boolean> classSupport;
-//
-//        JdbcFeature(WeakConcurrentMap<Class<?>, Boolean> map) {
-//            this.classSupport = map;
-//        }
-//    }
+    private static void markNotSupported(JdbcFeature feature, Class<?> type, R2dbcException e) {
+        Boolean previous = feature.classSupport.put(type, Boolean.FALSE);
+        if (previous == null) {
+            logger.warn("JDBC feature not supported on class " + type, e);
+        }
+    }
+
+    /**
+     * Represent JDBC features for which availability has to be checked at runtime
+     */
+    private enum JdbcFeature {
+        METADATA(R2dbcGlobalState.metadataSupported),
+        CONNECTION(R2dbcGlobalState.connectionSupported);
+
+        private final WeakConcurrentMap<Class<?>, Boolean> classSupport;
+
+        JdbcFeature(WeakConcurrentMap<Class<?>, Boolean> map) {
+            this.classSupport = map;
+        }
+    }
 
 }

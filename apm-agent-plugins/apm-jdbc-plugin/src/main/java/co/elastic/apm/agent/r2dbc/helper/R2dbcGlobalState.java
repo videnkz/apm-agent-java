@@ -19,13 +19,19 @@
  */
 package co.elastic.apm.agent.r2dbc.helper;
 
+import co.elastic.apm.agent.jdbc.helper.ConnectionMetaData;
 import co.elastic.apm.agent.sdk.state.GlobalState;
 import co.elastic.apm.agent.sdk.weakmap.WeakMapSupplier;
 import com.blogspot.mydailyjava.weaklockfree.WeakConcurrentMap;
+import io.r2dbc.spi.Connection;
+
 
 @GlobalState
 public class R2dbcGlobalState {
 
-    public static final WeakConcurrentMap<Object, String> statementSqlMap = WeakMapSupplier.createMap();
+    public static final WeakConcurrentMap<Object, Object[]> statementConnectionSqlMap = WeakMapSupplier.createMap();
+    public static final WeakConcurrentMap<Connection, ConnectionMetaData> r2dbcMetaDataMap = WeakMapSupplier.createMap();
+    public static final WeakConcurrentMap<Class<?>, Boolean> metadataSupported = WeakMapSupplier.createMap();
+    public static final WeakConcurrentMap<Class<?>, Boolean> connectionSupported = WeakMapSupplier.createMap();
 
 }
