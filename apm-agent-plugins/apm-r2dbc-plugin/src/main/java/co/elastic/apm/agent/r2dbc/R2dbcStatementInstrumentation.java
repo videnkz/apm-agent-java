@@ -19,7 +19,6 @@
  */
 package co.elastic.apm.agent.r2dbc;
 
-import co.elastic.apm.agent.impl.ElasticApmTracer;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.r2dbc.helper.R2dbcHelper;
 import io.r2dbc.spi.Connection;
@@ -43,19 +42,13 @@ import static net.bytebuddy.matcher.ElementMatchers.takesNoArguments;
 /**
  * Creates spans for JDBC {@link Statement} execution
  */
-public abstract class R2dbcStatementInstrumentation extends R2dbcInstrumentation {
-
-    private final ElementMatcher<? super MethodDescription> methodMatcher;
-
-    R2dbcStatementInstrumentation(ElementMatcher<? super MethodDescription> methodMatcher) {
-        this.methodMatcher = methodMatcher;
-    }
+public class R2dbcStatementInstrumentation extends R2dbcInstrumentation {
 
     @Override
     public ElementMatcher<? super NamedElement> getTypeMatcherPreFilter() {
         // DB2 driver does not call its Statements statements.
         return nameContains("Statement");
-        // TODO check for db2
+//        TODO check for db2
 //            .or(nameStartsWith("com.ibm.db2.jcc")
 //        );
     }
@@ -68,41 +61,36 @@ public abstract class R2dbcStatementInstrumentation extends R2dbcInstrumentation
 
     @Override
     public ElementMatcher<? super MethodDescription> getMethodMatcher() {
-        return methodMatcher;
+        return named("execute")
+            .and(takesNoArguments())
+            .and(isPublic());
     }
 
-    /**
-     * Instruments:
-     * <ul>
-     *     <li>{@link Statement#execute()} </li>
-     * </ul>
-     */
-    @SuppressWarnings("DuplicatedCode")
-    public static class R2dbcExecuteInstrumentation extends R2dbcStatementInstrumentation {
+    @Override
+    public String getAdviceClassName() {
+        return "co.elastic.apm.agent.r2dbc.R2dbcStatementInstrumentation$R2dbcExecuteAdvice";
+    }
 
-        public R2dbcExecuteInstrumentation(ElasticApmTracer tracer) {
-            super(
-                named("execute")
-                    .and(takesNoArguments())
-                    .and(isPublic())
-            );
-        }
+    public static class R2dbcExecuteAdvice {
 
         @Nullable
         @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
-        public static Object onBeforeExecute(@Advice.This Statement statement) {
+        public static Object onBeforeExecute(@Advice.This Object statementObject) {
+            System.out.println("### onBeforeExecute");
             R2dbcHelper helper = R2dbcHelper.get();
-            Object[] connectionSqlObj = helper.retrieveConnectionSqlForStatement(statement);
+            Object[] connectionSqlObj = helper.retrieveConnectionSqlForStatement(statementObject);
             @Nullable String sql = connectionSqlObj != null ? (connectionSqlObj[1] instanceof String ? (String) connectionSqlObj[1] : null) : null;
             @Nullable Connection connection = connectionSqlObj != null ? (connectionSqlObj[0] instanceof Connection ? (Connection) connectionSqlObj[0] : null) : null;
-            return R2dbcHelper.get().createJdbcSpan(connection, sql, statement, tracer.getActive(), false);
+            return R2dbcHelper.get().createJdbcSpan(connection, sql, statementObject, tracer.getActive(), false);
         }
 
 
+        @Nullable
+//        @AssignTo.Return(typing = Assigner.Typing.DYNAMIC)
         @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
-        public static void onAfterExecute(@Advice.This Statement statement,
-                                          @Advice.Enter @Nullable Object span,
+        public static void onAfterExecute(@Advice.Enter @Nullable Object span,
                                           @Advice.Thrown @Nullable Throwable t) {
+            System.out.println("### onAfterExecute");
             if (span == null) {
                 return;
             }
@@ -110,7 +98,10 @@ public abstract class R2dbcStatementInstrumentation extends R2dbcInstrumentation
             ((Span) span).captureException(t)
                 .deactivate()
                 .end();
-
+//            if (t != null || returnValue == null) {
+//                return;
+//            }
+//            return R2dbcWebfluxHelper.wrapPublisher(tracer, returnValue, (Span) span);
         }
     }
 

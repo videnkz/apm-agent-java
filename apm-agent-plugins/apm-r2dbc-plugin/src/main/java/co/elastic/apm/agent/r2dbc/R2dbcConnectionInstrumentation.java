@@ -42,18 +42,9 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
 /**
  * Matches {@link Connection#createStatement(String)} methods
- * and keeps a reference to from the resulting {@link io.r2dbc.spi.Statement} to the sql.
+ * and keeps a reference to from the resulting {@link Statement} to the sql.
  */
 public class R2dbcConnectionInstrumentation extends R2dbcInstrumentation {
-
-    @Advice.OnMethodExit(suppress = Throwable.class, inline = false)
-    public static void storeConnectionSql(@Advice.This Object connectionObject,
-                                          @Advice.Return @Nullable Statement statement,
-                                          @Advice.Argument(0) String sql) {
-        if (statement != null) { // might be null if exception is thrown
-            R2dbcHelper.get().mapStatementToSql(statement, connectionObject, sql);
-        }
-    }
 
     @Override
     public ElementMatcher<? super NamedElement> getTypeMatcherPreFilter() {
@@ -72,6 +63,24 @@ public class R2dbcConnectionInstrumentation extends R2dbcInstrumentation {
             .and(returns(hasSuperType(named("io.r2dbc.spi.Statement"))))
             .and(takesArgument(0, String.class))
             .and(isPublic());
+    }
+
+    @Override
+    public String getAdviceClassName() {
+        return "co.elastic.apm.agent.r2dbc.R2dbcConnectionInstrumentation$R2dbcConnectionAdvice";
+    }
+
+    public static class R2dbcConnectionAdvice {
+
+        @Advice.OnMethodExit(suppress = Throwable.class, inline = false)
+        public static void storeConnectionSql(@Advice.This Object connectionObject,
+                                              @Advice.Return @Nullable Statement statement,
+                                              @Advice.Argument(0) String sql) {
+            if (statement != null) { // might be null if exception is thrown
+                R2dbcHelper.get().mapStatementToSql(statement, connectionObject, sql);
+            }
+        }
+
     }
 
 }

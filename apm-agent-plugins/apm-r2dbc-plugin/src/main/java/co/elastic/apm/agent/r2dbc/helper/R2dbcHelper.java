@@ -23,8 +23,6 @@ import co.elastic.apm.agent.db.signature.SignatureParser;
 import co.elastic.apm.agent.impl.context.Destination;
 import co.elastic.apm.agent.impl.transaction.AbstractSpan;
 import co.elastic.apm.agent.impl.transaction.Span;
-import co.elastic.apm.agent.jdbc.JdbcFilter;
-import co.elastic.apm.agent.jdbc.helper.ConnectionMetaData;
 import com.blogspot.mydailyjava.weaklockfree.WeakConcurrentMap;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
@@ -84,9 +82,26 @@ public class R2dbcHelper {
 
     @Nullable
     public Span createJdbcSpan(@Nullable Connection connection, @Nullable String sql, Object statement, @Nullable AbstractSpan<?> parent, boolean preparedStatement) {
-        if (!(statement instanceof Statement) || sql == null || isAlreadyMonitored(parent) || parent == null) {
+        if (!(statement instanceof Statement)) {
+            logger.info("### Is not Statement instance");
             return null;
         }
+        if (sql == null) {
+            logger.info("### sql is null.");
+            return null;
+        }
+        if (isAlreadyMonitored(parent)) {
+            logger.info("### is already monitored");
+            return null;
+        }
+        if (parent == null) {
+            logger.info("### parent is null");
+            return null;
+        }
+//        if (!(statement instanceof Statement) || sql == null || isAlreadyMonitored(parent) || parent == null) {
+//            System.out.println("### is already created, return null.");
+//            return null;
+//        }
 
         Span span = parent.createSpan().activate();
         if (sql.isEmpty()) {
@@ -114,11 +129,11 @@ public class R2dbcHelper {
         if (connectionMetaData != null) {
             vendor = connectionMetaData.getDbVendor();
             span.getContext().getDb()
-                .withInstance(connectionMetaData.getInstance())
-                .withUser(connectionMetaData.getUser());
+                .withInstance(null)
+                .withUser(null);
             Destination destination = span.getContext().getDestination()
-                .withAddress(connectionMetaData.getHost())
-                .withPort(connectionMetaData.getPort());
+                .withAddress(null)
+                .withPort(-1);
             destination.getService()
                 .withName(vendor)
                 .withResource(vendor)
