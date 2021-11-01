@@ -73,8 +73,9 @@ public class JmxMetric {
         } catch (MalformedObjectNameException e) {
             throw new IllegalArgumentException("Invalid syntax for object_name[" + objectNameString + "] (" + e.getMessage() + ")", e);
         }
-        List<Attribute> attributes = new ArrayList<>();
-        for (String attribute : map.get(ATTRIBUTE)) {
+        List<String> attributeList = map.get(ATTRIBUTE);
+        List<Attribute> attributes = new ArrayList<>(attributeList.size() + 1);
+        for (String attribute : attributeList) {
             attributes.add(Attribute.valueOf(attribute));
         }
         return new JmxMetric(objectName, attributes);
@@ -104,6 +105,18 @@ public class JmxMetric {
         return map;
     }
 
+    Map<String, List<String>> asMapOptimized() {
+        HashMap<String, List<String>> map = new LinkedHashMap<>(4);
+        map.put(OBJECT_NAME, Collections.singletonList(objectName.toString()));
+        final List<JmxMetric.Attribute> localAttributes = this.attributes;
+        ArrayList<String> attributeStrings = new ArrayList<>(localAttributes.size() + 1);
+        for (Attribute attribute : localAttributes) {
+            attributeStrings.add(attribute.toString());
+        }
+        map.put(ATTRIBUTE, attributeStrings);
+        return map;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -124,8 +137,8 @@ public class JmxMetric {
 
         @Override
         public List<JmxMetric> convert(String s) throws IllegalArgumentException {
-            List<JmxMetric> result = new ArrayList<>();
             List<Map<String, List<String>>> maps = new MapsTokenScanner(s).scanMultiValueMaps();
+            List<JmxMetric> result = new ArrayList<>(maps.size());
             for (Map<String, List<String>> map : maps) {
                 result.add(JmxMetric.fromMap(map));
             }
@@ -134,7 +147,7 @@ public class JmxMetric {
 
         @Override
         public String toString(List<JmxMetric> value) {
-            List<Map<String, List<String>>> maps = new ArrayList<>();
+            List<Map<String, List<String>>> maps = new ArrayList<>(value.size());
             for (JmxMetric jmxMetric : value) {
                 maps.add(jmxMetric.asMap());
             }
