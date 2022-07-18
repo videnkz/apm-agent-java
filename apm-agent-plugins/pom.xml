@@ -72,6 +72,7 @@
         <module>apm-jakarta-websocket-plugin</module>
         <module>apm-ecs-logging-plugin</module>
         <module>apm-aws-sdk</module>
+        <module>apm-microprofilerestclient-plugin</module>
     </modules>
 
     <dependencies>
