@@ -69,7 +69,7 @@ jobs:
           ref: ${{ inputs.branch }}
           token: ${{ env.GITHUB_TOKEN }}
       - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DIST }}
@@ -219,7 +219,7 @@ jobs:
         with:
           ref: ${{ env.TAG_NAME }}
       - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DIST }}
@@ -242,7 +242,7 @@ jobs:
           VERSION=${VERSION//./-}
           
           ELASTIC_LAYER_NAME="elastic-apm-java-${VERSION}" .ci/publish-aws.sh
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: arn-file
           path: .ci/.arn-file.md
